@@ -295,6 +295,113 @@ sudo ip vrf exec vrf3 ping -c3 10.0.1.2 -I 10.0.1.3   # vrf3 → vrf2 (ARP from 
 
 ---
 
+## Docker
+
+### Docker dependencies
+
+| Requirement | Minimum version | Notes |
+|-------------|----------------|-------|
+| Docker Engine | **20.10+** | First version with `CAP_BPF` support |
+| Host kernel | **5.9+** | Same as bare-metal; XDP attaches to the host kernel |
+| Host `bpffs` | mounted at `/sys/fs/bpf` | Required for pin mode; standard on systemd hosts |
+
+> **Important constraints**
+> XDP programs are loaded into the **host kernel**, not into the container's namespace. The container is only used to build or run the userspace loader binary. The following host-level permissions are therefore mandatory at runtime:
+> - `--network host` — the loader must reference host interface names (e.g. `eth0`)
+> - `CAP_NET_ADMIN` — required to call `bpf_xdp_attach`
+> - `CAP_BPF` — required for all BPF syscalls (Docker 20.10+)
+> - `CAP_SYS_ADMIN` — required for bpffs pin operations
+> - `/sys/fs/bpf` bind-mounted from the host — so pinned maps persist outside the container lifetime
+> - `/sys/kernel/btf/vmlinux` bind-mounted from the host (read-only) — needed only if you regenerate `vmlinux.h` at runtime
+
+### Build the image
+
+```bash
+docker build -t xdp_arp_filter:latest .
+```
+
+To verify the build artifacts without pushing:
+```bash
+docker run --rm xdp_arp_filter:latest -h
+```
+
+### Required runtime flags
+
+| Flag | Why it is needed |
+|------|-----------------|
+| `--network host` | Loader references host interfaces by name |
+| `--cap-add CAP_NET_ADMIN` | `bpf_xdp_attach` / `bpf_xdp_detach` |
+| `--cap-add CAP_BPF` | All BPF syscalls |
+| `--cap-add SYS_ADMIN` | bpffs pin/unpin operations |
+| `-v /sys/fs/bpf:/sys/fs/bpf` | Persist pinned maps outside the container |
+| `--pid host` | (optional) Allows `bpftool` inside the container to see host BPF objects |
+
+Using `--privileged` is equivalent to all of the above and simplifies the command, but grants broader access. Prefer explicit `--cap-add` flags in production.
+
+### Run: interactive mode
+
+```bash
+docker run --rm \
+  --network host \
+  --cap-add CAP_NET_ADMIN --cap-add CAP_BPF --cap-add SYS_ADMIN \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v /path/to/allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
+  xdp_arp_filter:latest \
+  -i eth0 -f /etc/xdp_arp_filter/allowed_ips.txt -m skb -s
+```
+
+Press `Ctrl+C` to detach and exit. The XDP program is removed automatically.
+
+### Run: persistent mode (survives container stop)
+
+```bash
+docker run --rm \
+  --network host \
+  --cap-add CAP_NET_ADMIN --cap-add CAP_BPF --cap-add SYS_ADMIN \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v /path/to/allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
+  xdp_arp_filter:latest \
+  -i eth0 -f /etc/xdp_arp_filter/allowed_ips.txt -m skb -p
+```
+
+The container exits immediately after pinning. The XDP program keeps running in the host kernel. Pinned objects are visible on the host at `/sys/fs/bpf/xdp_arp_filter/`.
+
+### Hot-reload allowed IPs
+
+Edit `allowed_ips.txt` on the host, then run the reload container:
+
+```bash
+docker run --rm \
+  --cap-add CAP_BPF --cap-add SYS_ADMIN \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  -v /path/to/allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
+  xdp_arp_filter:latest \
+  -r -f /etc/xdp_arp_filter/allowed_ips.txt
+```
+
+`--network host` is not needed for reload; the loader only touches the pinned BPF map, not the interface.
+
+### Detach
+
+```bash
+docker run --rm \
+  --network host \
+  --cap-add CAP_NET_ADMIN --cap-add CAP_BPF --cap-add SYS_ADMIN \
+  -v /sys/fs/bpf:/sys/fs/bpf \
+  xdp_arp_filter:latest \
+  -i eth0 -m skb -D
+```
+
+
+```bash
+docker-compose up -d          # attach and pin (persistent)
+docker-compose down           # does NOT detach — run the detach container manually
+```
+
+> **Note:** `docker compose down` stops and removes the container but does **not** detach the XDP program from the interface. Always run the detach command explicitly before `docker compose down` if you want to clean up the XDP hook.
+
+---
+
 ## Troubleshooting
 
 **`bpftool: command not found`** — See the install section; create a symlink from `/usr/lib/linux-tools/*/bpftool`.
@@ -316,6 +423,12 @@ bpftool net show dev eth0  # shows attached XDP program name
 bpftool map show           # list all maps, find allowed_ips id
 bpftool map dump id <id>   # dump all entries
 ```
+
+**Docker: `operation not permitted` when attaching XDP** — Ensure `--cap-add CAP_NET_ADMIN --cap-add CAP_BPF --cap-add SYS_ADMIN` and `--network host` are all present, or use `--privileged`.
+
+**Docker: pinned maps not visible after container exits** — The `/sys/fs/bpf` bind mount must be present (`-v /sys/fs/bpf:/sys/fs/bpf`). Without it, pins are created inside the container's mount namespace and are lost when the container exits.
+
+**Docker: `libbpf1` not found in runtime image** — On Ubuntu 22.04 the package is named `libbpf0`; change the runtime `apt-get install` line accordingly.
 
 ---
 

@@ -1,0 +1,14 @@
+services:
+  xdp-arp-filter:
+    image: xdp_arp_filter:latest
+    build: .
+    network_mode: host
+    cap_add:
+      - CAP_NET_ADMIN
+      - CAP_BPF
+      - SYS_ADMIN
+    volumes:
+      - /sys/fs/bpf:/sys/fs/bpf
+      - ./allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro
+    command: ["-i", "eth0", "-f", "/etc/xdp_arp_filter/allowed_ips.txt", "-m", "skb", "-p"]
+    restart: unless-stopped

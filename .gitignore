@@ -12,3 +12,6 @@ vmlinux.h
 
 # OS
 .DS_Store
+
+# Docker
+.dockerignore
