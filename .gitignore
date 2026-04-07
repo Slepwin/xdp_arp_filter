@@ -1,0 +1,14 @@
+# Build outputs
+xdp_arp_filter
+xdp_arp_filter_kern.bpf.o
+xdp_arp_filter_kern.skel.h
+vmlinux.h
+
+# Editor / IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store

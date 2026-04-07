@@ -1,0 +1,15 @@
+[Unit]
+Description=XDP ARP Filter — whitelist-based ARP request filtering
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Adjust interface, mode, and file path to match your setup
+ExecStart=/usr/local/bin/xdp_arp_filter -i eth0 -f /etc/xdp_arp_filter/allowed_ips.txt -m native -p
+ExecStop=/usr/local/bin/xdp_arp_filter -i eth0 -m native -D
+
+[Install]
+WantedBy=multi-user.target
