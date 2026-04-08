@@ -2,6 +2,27 @@
 
 An XDP/eBPF program that filters ARP requests at the earliest possible point in the Linux network stack. Only ARP requests whose **source IP** appears in a configurable allowlist are passed through; all others are dropped with zero kernel overhead. ARP replies are always forwarded unconditionally.
 
+## Project Structure
+
+```
+xdp_arp_filter/
+├── README.md
+├── allowed_ips.txt
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── environments/
+│   ├── netns_setup.sh
+│   └── vrf_setup.sh
+└── src/
+    ├── Makefile
+    ├── xdp-arp-filter.service
+    ├── xdp_arp_filter_kern.c
+    └── xdp_arp_filter_user.c
+```
+
+---
+
 ## How It Works
 
 ```
@@ -77,25 +98,25 @@ sudo dnf install clang llvm libbpf-devel elfutils-libelf-devel \
 cd xdp_arp_filter
 
 # Build everything (BPF object → skeleton header → userspace binary)
-make
+make -C src
 ```
 
 The build process runs three steps automatically:
 
-1. `clang -target bpf` compiles `xdp_arp_filter_kern.c` → `xdp_arp_filter_kern.bpf.o`
-2. `bpftool gen skeleton` generates `xdp_arp_filter_kern.skel.h`
-3. `gcc` compiles `xdp_arp_filter_user.c` (using the skeleton) → `xdp_arp_filter`
+1. `clang -target bpf` compiles `src/xdp_arp_filter_kern.c` → `src/xdp_arp_filter_kern.bpf.o`
+2. `bpftool gen skeleton` generates `src/xdp_arp_filter_kern.skel.h`
+3. `gcc` compiles `src/xdp_arp_filter_user.c` (using the skeleton) → `src/xdp_arp_filter`
 
 **Optional targets:**
 
 ```bash
-make vmlinux      # Generate vmlinux.h from running kernel BTF (if needed)
-make clean        # Remove all build artifacts
+make -C src vmlinux      # Generate vmlinux.h from running kernel BTF (if needed)
+make -C src clean        # Remove all build artifacts
 ```
 
 You can override the compiler and bpftool paths:
 ```bash
-make CLANG=/usr/bin/clang-16 BPFTOOL=/usr/sbin/bpftool
+make -C src CLANG=/usr/bin/clang-16 BPFTOOL=/usr/sbin/bpftool
 ```
 
 ---
@@ -159,7 +180,7 @@ Options:
 Attach the filter and run in the foreground. Press `Ctrl+C` to detach and exit cleanly.
 
 ```bash
-sudo ./xdp_arp_filter -i eth0 -f allowed_ips.txt -m native -s
+sudo ./src/xdp_arp_filter -i eth0 -f allowed_ips.txt -m native -s
 ```
 
 The `-s` flag prints live ARP pass/drop counters every second.
@@ -169,7 +190,7 @@ The `-s` flag prints live ARP pass/drop counters every second.
 Attach the filter, pin maps and program to `/sys/fs/bpf/xdp_arp_filter`, then exit. The XDP program remains active in the kernel as long as the interface is up or until explicitly detached.
 
 ```bash
-sudo ./xdp_arp_filter -i eth0 -f allowed_ips.txt -m native -p
+sudo ./src/xdp_arp_filter -i eth0 -f allowed_ips.txt -m native -p
 ```
 
 Pinned paths:
@@ -185,7 +206,7 @@ Pinned paths:
 Edit `allowed_ips.txt`, then flush and repopulate the pinned map without detaching the XDP program:
 
 ```bash
-sudo ./xdp_arp_filter -r -f allowed_ips.txt
+sudo ./src/xdp_arp_filter -r -f allowed_ips.txt
 ```
 
 Requires the program to be running in persistent mode (`-p`).
@@ -195,19 +216,19 @@ Requires the program to be running in persistent mode (`-p`).
 Remove the XDP program from the interface and clean up pinned objects:
 
 ```bash
-sudo ./xdp_arp_filter -i eth0 -m native -D
+sudo ./src/xdp_arp_filter -i eth0 -m native -D
 ```
 
 ---
 
 ## Systemd Service
 
-A service unit is provided in `xdp-arp-filter.service` for production use.
+A service unit is provided in `src/xdp-arp-filter.service` for production use.
 
 **Install:**
 ```bash
 # Install the binary
-sudo cp xdp_arp_filter /usr/local/bin/
+sudo cp src/xdp_arp_filter /usr/local/bin/
 
 # Install the IP allowlist
 sudo mkdir -p /etc/xdp_arp_filter
@@ -215,7 +236,7 @@ sudo cp allowed_ips.txt /etc/xdp_arp_filter/
 
 # Edit the service unit to set the correct interface and mode
 # Default: -i eth0 -m native  — adjust as needed
-sudo cp xdp-arp-filter.service /etc/systemd/system/
+sudo cp src/xdp-arp-filter.service /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now xdp-arp-filter
@@ -263,7 +284,7 @@ sudo ./environments/netns_setup.sh teardown
 
 Attach the XDP filter on the bridge uplink and test from inside the namespaces:
 ```bash
-sudo ./xdp_arp_filter -i veth0-br -f allowed_ips.txt -m skb -s
+sudo ./src/xdp_arp_filter -i veth0-br -f allowed_ips.txt -m skb -s
 sudo ip netns exec ns1 ping -c3 10.0.1.2   # ns1 → ns2 (ARP from 10.0.1.1 — allowed)
 sudo ip netns exec ns3 ping -c3 10.0.1.2   # ns3 → ns2 (ARP from 10.0.1.3 — dropped)
 ```
@@ -316,8 +337,9 @@ sudo ip vrf exec vrf3 ping -c3 10.0.1.2 -I 10.0.1.3   # vrf3 → vrf2 (ARP from 
 
 ### Build the image
 
+From the project root:
 ```bash
-docker build -t xdp_arp_filter:latest .
+docker build -f docker/Dockerfile -t xdp_arp_filter:latest .
 ```
 
 To verify the build artifacts without pushing:
@@ -394,11 +416,11 @@ docker run --rm \
 
 
 ```bash
-docker-compose up -d          # attach and pin (persistent)
-docker-compose down           # does NOT detach — run the detach container manually
+docker-compose -f docker/docker-compose.yml up -d          # attach and pin (persistent)
+docker-compose -f docker/docker-compose.yml down           # does NOT detach — run the detach container manually
 ```
 
-> **Note:** `docker compose down` stops and removes the container but does **not** detach the XDP program from the interface. Always run the detach command explicitly before `docker compose down` if you want to clean up the XDP hook.
+> **Note:** `docker-compose down` stops and removes the container but does **not** detach the XDP program from the interface. Always run the detach command explicitly before `docker-compose down` if you want to clean up the XDP hook.
 
 ---
 

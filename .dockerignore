@@ -1,8 +1,15 @@
-# Build outputs (generated in src/)
+# Git
+.git/
+.gitignore
+
+# Build artifacts (rebuild inside container)
 src/xdp_arp_filter
 src/xdp_arp_filter_kern.bpf.o
 src/xdp_arp_filter_kern.skel.h
 src/vmlinux.h
+
+# Environment scripts (not needed in image)
+environments/
 
 # Editor / IDE
 .vscode/
@@ -12,3 +19,6 @@ src/vmlinux.h
 
 # OS
 .DS_Store
+
+# Docs
+README.md
