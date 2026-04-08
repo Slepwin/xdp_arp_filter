@@ -14,9 +14,9 @@ RUN bpftool --version 2>/dev/null || \
     ln -s /usr/lib/linux-tools/*/bpftool /usr/local/sbin/bpftool
 
 WORKDIR /build
-COPY xdp_arp_filter_kern.c \
-     xdp_arp_filter_user.c \
-     Makefile ./
+COPY src/xdp_arp_filter_kern.c \
+     src/xdp_arp_filter_user.c \
+     src/Makefile ./
 
 RUN make
 
@@ -31,6 +31,7 @@ COPY --from=builder /build/xdp_arp_filter /usr/local/bin/xdp_arp_filter
 
 # Default allowlist location inside the container
 RUN mkdir -p /etc/xdp_arp_filter
+# Build context is the project root (set via docker-compose or -f flag)
 COPY allowed_ips.txt /etc/xdp_arp_filter/allowed_ips.txt
 
 ENTRYPOINT ["/usr/local/bin/xdp_arp_filter"]
