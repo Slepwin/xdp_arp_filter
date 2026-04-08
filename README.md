@@ -345,7 +345,7 @@ docker run --rm \
   --network host \
   --cap-add CAP_NET_ADMIN --cap-add CAP_BPF --cap-add SYS_ADMIN \
   -v /sys/fs/bpf:/sys/fs/bpf \
-  -v /path/to/allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
+  -v /allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
   xdp_arp_filter:latest \
   -i eth0 -f /etc/xdp_arp_filter/allowed_ips.txt -m skb -s
 ```
@@ -359,7 +359,7 @@ docker run --rm \
   --network host \
   --cap-add CAP_NET_ADMIN --cap-add CAP_BPF --cap-add SYS_ADMIN \
   -v /sys/fs/bpf:/sys/fs/bpf \
-  -v /path/to/allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
+  -v /allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
   xdp_arp_filter:latest \
   -i eth0 -f /etc/xdp_arp_filter/allowed_ips.txt -m skb -p
 ```
@@ -374,7 +374,7 @@ Edit `allowed_ips.txt` on the host, then run the reload container:
 docker run --rm \
   --cap-add CAP_BPF --cap-add SYS_ADMIN \
   -v /sys/fs/bpf:/sys/fs/bpf \
-  -v /path/to/allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
+  -v /allowed_ips.txt:/etc/xdp_arp_filter/allowed_ips.txt:ro \
   xdp_arp_filter:latest \
   -r -f /etc/xdp_arp_filter/allowed_ips.txt
 ```
